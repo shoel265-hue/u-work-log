@@ -570,7 +570,7 @@
         const logData = {
             workDate: document.getElementById("work-date").value,
             status: document.getElementById("status-select").value,
-            userName: document.getElementById("user-name-input").value, // ⭕ 직접 입력된 담당자 성명 저장
+            userName: document.getElementById("user-name-input").value,
             dept: document.getElementById("dept-select").value,
             day: document.getElementById("day-select").value,
             weather: document.getElementById("weather-select").value,
@@ -601,7 +601,7 @@
         const payload = {
             action: "save",
             workDate: logData.workDate,
-            team: "unsong", // ⭕ 식별자
+            team: "unsong",
             contentData: logData,
             photos: photos
         };
@@ -624,30 +624,53 @@
         });
     }
 
-    // ★ 서버(Google Apps Script) 데이터 불러오기 연동 ★
+    // ★ 서버(Google Apps Script) 데이터 불러오기 연동 (날짜 변경 시 입력폼 및 근무자 초기화 방어 적용) ★
     function loadSavedDataFromServer() {
         const workDate = document.getElementById("work-date").value;
         if (!workDate) return;
 
-        // 💡 날짜 변경 시 이전 내용과 사진 초기화[cite: 31]
+        // 💡 1. 날짜 변경/조회 시 기존 근무자 입력폼 전체 초기화 (1행만 기본값, 나머지 빈칸)
+        const workerRows = document.querySelectorAll(".worker-row");
+        workerRows.forEach((row, idx) => {
+            row.querySelector(".w-name").value = (idx === 0) ? "이욱호" : "";
+            row.querySelector(".w-jugan").value = (idx === 0) ? "주간" : "";
+            row.querySelector(".w-yagan").value = "";
+            row.querySelector(".w-humu").value = "";
+            row.querySelector(".w-gita").value = "";
+        });
+
+        // 2. 업무 내용 텍스트 초기화
         const textarea = document.getElementById("work-log-content");
         if (textarea) {
             textarea.value = "";
             autoResizeTextarea(textarea);
         }
+
+        // 3. 사진 초기화[cite: 7]
         for (let i = 1; i <= 3; i++) {
             deletePhoto({ stopPropagation: () => {} }, i);
         }
 
+        // 4. 결재란(서명) 초기화
+        ['img-damdang', 'img-team', 'img-sojang'].forEach((imgId, idx) => {
+            const btnIds = ['del-sign-damdang', 'del-sign-team', 'del-sign-sojang'];
+            const img = document.getElementById(imgId);
+            const delBtn = document.getElementById(btnIds[idx]);
+            img.removeAttribute('src');
+            img.style.display = "none";
+            delBtn.classList.remove('has-image');
+        });
+
+        // 5. 서버로부터 데이터 조회
         fetch(`${GAS_WEB_APP_URL}?workDate=${workDate}`)
         .then(res => res.json())
         .then(res => {
-            if (res.status === "success" && res.data && res.data["unsong"]) { // ⭕ 식별자
+            if (res.status === "success" && res.data && res.data["unsong"]) {
                 const teamData = res.data["unsong"];
                 const data = teamData.contentData;
 
                 if (data.status) document.getElementById("status-select").value = data.status;
-                if (data.userName) document.getElementById("user-name-input").value = data.userName; // ⭕ 저장된 담당자 성명 불러오기
+                if (data.userName) document.getElementById("user-name-input").value = data.userName;
                 if (data.dept) document.getElementById("dept-select").value = data.dept;
                 if (data.weather) document.getElementById("weather-select").value = data.weather;
                 
@@ -656,6 +679,7 @@
                 } else if (data.workLogContent !== undefined) {
                     document.getElementById("work-log-content").value = data.workLogContent;
                 }
+                autoResizeTextarea(document.getElementById("work-log-content"));
 
                 const roles = [
                     { key: 'imgDamdang', id: 'img-damdang', btn: 'del-sign-damdang' },
@@ -757,4 +781,4 @@
 </script>
 
 </body>
-</html>[cite: 31]
+</html>
