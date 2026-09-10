@@ -562,6 +562,7 @@
         }
     }
 
+    // ★ 서버(Google Apps Script) 저장 기능 연동 (unsong 팀 식별자 적용) ★
     function saveData() {
         document.getElementById("status-select").value = "일지완료";
 
@@ -622,6 +623,7 @@
         });
     }
 
+    // ★ 서버 데이터 불러오기 기능 (기존 입력값 유실 방어 로직 적용) ★
     function loadSavedDataFromServer() {
         const workDate = document.getElementById("work-date").value;
         if (!workDate) return;
