@@ -197,7 +197,6 @@
             </div>
         </div>
 
-        <!-- ✍️ 담당자 입력란을 콤보박스 대신 자유 입력 텍스트박스로 변경 -->
         <div class="info-row">
             <div class="info-label">담당자</div>
             <div class="info-input" style="justify-content: flex-start;">
@@ -563,7 +562,6 @@
         }
     }
 
-    // ★ 서버(Google Apps Script) 저장 기능 연동 (unsong 팀 식별자 적용) ★
     function saveData() {
         document.getElementById("status-select").value = "일지완료";
 
@@ -624,12 +622,11 @@
         });
     }
 
-    // ★ 서버(Google Apps Script) 데이터 불러오기 연동 (날짜 변경 시 입력폼 및 근무자 초기화 방어 적용) ★
     function loadSavedDataFromServer() {
         const workDate = document.getElementById("work-date").value;
         if (!workDate) return;
 
-        // 💡 1. 날짜 변경/조회 시 기존 근무자 입력폼 전체 초기화 (1행만 기본값, 나머지 빈칸)
+        // 1. 초기화 작업 수행
         const workerRows = document.querySelectorAll(".worker-row");
         workerRows.forEach((row, idx) => {
             row.querySelector(".w-name").value = (idx === 0) ? "이욱호" : "";
@@ -639,19 +636,16 @@
             row.querySelector(".w-gita").value = "";
         });
 
-        // 2. 업무 내용 텍스트 초기화
         const textarea = document.getElementById("work-log-content");
         if (textarea) {
             textarea.value = "";
             autoResizeTextarea(textarea);
         }
 
-        // 3. 사진 초기화[cite: 7]
         for (let i = 1; i <= 3; i++) {
             deletePhoto({ stopPropagation: () => {} }, i);
         }
 
-        // 4. 결재란(서명) 초기화
         ['img-damdang', 'img-team', 'img-sojang'].forEach((imgId, idx) => {
             const btnIds = ['del-sign-damdang', 'del-sign-team', 'del-sign-sojang'];
             const img = document.getElementById(imgId);
@@ -661,7 +655,7 @@
             delBtn.classList.remove('has-image');
         });
 
-        // 5. 서버로부터 데이터 조회
+        // 2. 서버로부터 데이터 조회
         fetch(`${GAS_WEB_APP_URL}?workDate=${workDate}`)
         .then(res => res.json())
         .then(res => {
@@ -713,7 +707,8 @@
                     });
                 }
 
-                if (data.workers && data.workers.length > 0) {
+                // 서버에 저장된 근무자 데이터가 있으면 정상적으로 매핑
+                if (data.workers && Array.isArray(data.workers) && data.workers.length > 0) {
                     const rows = document.querySelectorAll(".worker-row");
                     rows.forEach((row, idx) => {
                         if (data.workers[idx]) {
@@ -726,6 +721,9 @@
                     });
                 }
             }
+        })
+        .catch(err => {
+            console.error("데이터 조회 실패:", err);
         });
     }
 
