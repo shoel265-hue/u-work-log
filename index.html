@@ -307,14 +307,11 @@
         <tbody>
             <script>
                 for(let i=1; i<=7; i++){
-                    let nameVal = (i===1) ? "이욱호" : "";
-                    let juganOpt = (i===1) ? '<option value="주간" selected>주간</option><option value="">-</option>' : '<option value="">-</option><option value="주간">주간</option>';
-                    
                     document.write(`
                         <tr class="worker-row">
                             <td class="no-input">${i}</td>
-                            <td><input type="text" class="w-name" value="${nameVal}" placeholder="성명 입력"></td>
-                            <td><select class="w-jugan">${juganOpt}</select></td>
+                            <td><input type="text" class="w-name" value="" placeholder="성명 입력"></td>
+                            <td><select class="w-jugan"><option value="">-</option><option value="주간">주간</option></select></td>
                             <td><select class="w-yagan"><option value="">-</option><option value="야간">야간</option></select></td>
                             <td>
                                 <select class="w-humu">
@@ -623,16 +620,16 @@
         });
     }
 
-    // ★ 서버 데이터 불러오기 기능 (기존 입력값 유실 방어 로직 적용) ★
+    // ★ 서버 데이터 불러오기 기능 (업무 내역과 동일하게 데이터 유무에 따라 완전 초기화 및 갱신) ★
     function loadSavedDataFromServer() {
         const workDate = document.getElementById("work-date").value;
         if (!workDate) return;
 
-        // 1. 초기화 작업 수행
+        // 1. 화면의 모든 필드 및 근무자 표를 완전히 빈 상태로 초기화
         const workerRows = document.querySelectorAll(".worker-row");
-        workerRows.forEach((row, idx) => {
-            row.querySelector(".w-name").value = (idx === 0) ? "이욱호" : "";
-            row.querySelector(".w-jugan").value = (idx === 0) ? "주간" : "";
+        workerRows.forEach((row) => {
+            row.querySelector(".w-name").value = "";
+            row.querySelector(".w-jugan").value = "";
             row.querySelector(".w-yagan").value = "";
             row.querySelector(".w-humu").value = "";
             row.querySelector(".w-gita").value = "";
@@ -657,7 +654,7 @@
             delBtn.classList.remove('has-image');
         });
 
-        // 2. 서버로부터 데이터 조회
+        // 2. 서버로부터 해당 날짜의 데이터를 조회하여 채워넣기
         fetch(`${GAS_WEB_APP_URL}?workDate=${workDate}`)
         .then(res => res.json())
         .then(res => {
@@ -709,10 +706,9 @@
                     });
                 }
 
-                // 서버에 저장된 근무자 데이터가 있으면 정상적으로 매핑
+                // 서버에 저장된 근무자 데이터가 있으면 해당 데이터로 정확히 채워넣기
                 if (data.workers && Array.isArray(data.workers) && data.workers.length > 0) {
-                    const rows = document.querySelectorAll(".worker-row");
-                    rows.forEach((row, idx) => {
+                    workerRows.forEach((row, idx) => {
                         if (data.workers[idx]) {
                             row.querySelector(".w-name").value = data.workers[idx].name || "";
                             row.querySelector(".w-jugan").value = data.workers[idx].jugan || "";
