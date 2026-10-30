@@ -208,7 +208,7 @@
             <div class="info-label">담당부서</div>
             <div class="info-input" style="justify-content: flex-start;">
                 <select id="dept-select" style="width: 140px;">
-                    <option value="운송팀" selected>운송팀</option>
+                    <option value="운송" selected>운송</option>
                     <option value="점검팀">점검팀</option>
                     <option value="기술지원">기술지원</option>
                     <option value="시설운영">시설운영</option>
@@ -284,7 +284,10 @@
         </tbody>
     </table>
 
-    <div class="section-title">근무자</div>
+    <div class="section-title">
+        <span>근무자 <span id="leave-link-status" data-html2canvas-ignore="true" style="font-size:11px; font-weight:normal; color:#64748b; margin-left:6px;"></span></span>
+        <button type="button" id="btn-leave-fill" data-html2canvas-ignore="true" onclick="autoFillWorkers(true)" style="padding:2px 8px; font-size:11px; cursor:pointer;">🔄 연차 데이터로 채우기</button>
+    </div>
     <table class="worker-table" id="worker-table">
         <colgroup>
             <col style="width: 8%;">
@@ -317,6 +320,8 @@
                                 <select class="w-humu">
                                     <option value="">-</option>
                                     <option value="휴무">휴무</option>
+                                    <option value="대체">대체</option>
+                                    <option value="대체반차">대체반차</option>
                                     <option value="연차">연차</option>
                                     <option value="반차">반차</option>
                                     <option value="당직휴무">당직휴무</option>
@@ -324,7 +329,7 @@
                                     <option value="축휴">축휴</option>
                                 </select>
                             </td>
-                            <td><select class="w-gita"><option value="">-</option><option value="출장">출장</option><option value="교육">교육</option></select></td>
+                            <td><select class="w-gita"><option value="">-</option><option value="출장">출장</option><option value="교육">교육</option><option value="교육반차">교육반차</option></select></td>
                         </tr>
                     `);
                 }
@@ -620,7 +625,7 @@
         });
     }
 
-    // ★ 서버 데이터 불러오기 기능 (업무 내역과 동일하게 데이터 유무에 따라 완전 초기화 및 갱신) ★
+    // ★ 서버 데이터 불러오기 기능 (업무 내역, 사진, 서명, 근무자 데이터 완벽 연동) ★
     function loadSavedDataFromServer() {
         const workDate = document.getElementById("work-date").value;
         if (!workDate) return;
@@ -654,24 +659,23 @@
             delBtn.classList.remove('has-image');
         });
 
-        // 2. 서버로부터 해당 날짜의 데이터를 조회하여 채워넣기
+        // 2. 서버로부터 해당 날짜의 데이터를 조회하여 채워넣기 (unsong 팀 식별자 사용)
         fetch(`${GAS_WEB_APP_URL}?workDate=${workDate}`)
         .then(res => res.json())
         .then(res => {
-            if (res.status === "success" && res.data && res.data["unsong"]) {
-                const teamData = res.data["unsong"];
-                const data = teamData.contentData;
+            if (res.status === "success" && res.data) {
+                const teamData = res.data["unsong"] || res.data;
+                if (!teamData) return;
+
+                const data = teamData.contentData || teamData;
 
                 if (data.status) document.getElementById("status-select").value = data.status;
                 if (data.userName) document.getElementById("user-name-input").value = data.userName;
                 if (data.dept) document.getElementById("dept-select").value = data.dept;
                 if (data.weather) document.getElementById("weather-select").value = data.weather;
                 
-                if (data.logContent !== undefined) {
-                    document.getElementById("work-log-content").value = data.logContent;
-                } else if (data.workLogContent !== undefined) {
-                    document.getElementById("work-log-content").value = data.workLogContent;
-                }
+                const logContentVal = data.logContent !== undefined ? data.logContent : (data.workLogContent !== undefined ? data.workLogContent : "");
+                document.getElementById("work-log-content").value = logContentVal;
                 autoResizeTextarea(document.getElementById("work-log-content"));
 
                 const roles = [
@@ -690,8 +694,9 @@
                     }
                 });
 
-                if (teamData.photoUrls && teamData.photoUrls.length > 0) {
-                    teamData.photoUrls.forEach((url, i) => {
+                const photoUrls = teamData.photoUrls || data.photos;
+                if (photoUrls && Array.isArray(photoUrls) && photoUrls.length > 0) {
+                    photoUrls.forEach((url, i) => {
                         const idx = i + 1;
                         if (url) {
                             const img = document.getElementById(`img-photo-${idx}`);
@@ -706,7 +711,7 @@
                     });
                 }
 
-                // 서버에 저장된 근무자 데이터가 있으면 해당 데이터로 정확히 채워넣기
+                // 서버에 저장된 근무자 데이터가 있으면 먼저 채워넣음
                 if (data.workers && Array.isArray(data.workers) && data.workers.length > 0) {
                     workerRows.forEach((row, idx) => {
                         if (data.workers[idx]) {
@@ -720,8 +725,16 @@
                 }
             }
         })
+        .then(() => { 
+            if (document.getElementById("work-date").value === workDate) { 
+                fillWorkersIfEmpty(); 
+            } 
+        })
         .catch(err => {
             console.error("데이터 조회 실패:", err);
+            if (document.getElementById("work-date").value === workDate) { 
+                fillWorkersIfEmpty(); 
+            }
         });
     }
 
@@ -764,6 +777,192 @@
             textarea.style.display = "block";
             autoResizeTextarea(textarea);
         });
+    }
+
+    // ===== 연차관리 데이터로 근무자 자동 채움 (운송 연동) =====
+    const LEAVE_DEPT = '운송';
+    const WORKER_ROWS = 7;
+
+    function localDateStr() {
+        const d = new Date();
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function isPastDate(date) { return !!date && date < localDateStr(); }
+    function setLinkStatus(msg, color) {
+        const st = document.getElementById('leave-link-status');
+        if (st) { st.textContent = msg; st.style.color = color || '#64748b'; }
+    }
+
+    function detectCongratKind(reason) {
+        const r = String(reason || '');
+        if (/조휴|장례|부고|조문|별세|사망|발인|상중|(?:부친|모친|빙부|빙모|부모|조부모|조부|조모|외조부|외조모|장인|장모|시부모|시부|시모|배우자|형제|자매|자녀|아들|딸|처|남편|아내|부|모)상/.test(r)) return '조휴';
+        return '축휴';
+    }
+
+    const COMBO_RANK = { '휴무': 0, '연차': 1, '조휴': 2, '축휴': 2, '교육': 3, '교육반차': 4, '반차': 5, '대체': 6, '대체반차': 7 };
+    function leaveToCombo(type, reason) {
+        if (type === '휴무') return { col: 'humu', val: '휴무' };
+        if (type === '연차') return { col: 'humu', val: '연차' };
+        if (type === '오전반차' || type === '오후반차') return { col: 'humu', val: '반차' };
+        if (type === '대체반차') return { col: 'humu', val: '대체반차' };
+        if (type === '대체휴가') return { col: 'humu', val: '대체' };
+        if (type === '축휴' || type === '조휴') return { col: 'humu', val: type };
+        if (type === '경조휴가') return { col: 'humu', val: detectCongratKind(reason) };
+        if (type === '교육') return { col: 'gita', val: '교육' };
+        if (type === '교육오전반차' || type === '교육오후반차') return { col: 'gita', val: '교육반차' };
+        return null;
+    }
+    function statusOf(emp, date) {
+        let best = null;
+        (emp.history || []).forEach(h => {
+            if (!h.start || h.start > date || (h.end || h.start) < date) return;
+            const c = leaveToCombo(h.type, h.reason);
+            if (c && (!best || COMBO_RANK[c.val] < COMBO_RANK[best.val])) best = c;
+        });
+        return best;
+    }
+    const stKey = st => st ? st.col + ':' + st.val : '';
+
+    function rankOf(pos) {
+        const p = String(pos || '');
+        if (p.includes('팀장')) return 1;
+        if (p.includes('주임')) return 2;
+        if (p.includes('반장')) return 3;
+        if (p.includes('기사')) return 4;
+        return 5;
+    }
+    function compareByRank(a, b) {
+        return (rankOf(a.position) - rankOf(b.position))
+            || String(a.joinDate || '9999-12-31').localeCompare(String(b.joinDate || '9999-12-31'))
+            || ((Number(a.no) || 9999) - (Number(b.no) || 9999));
+    }
+
+    function buildWorkerRows(members) {
+        let rows = members.map((m, i) => ({ order: i, people: [m] }));
+        const key = r => stKey(r.people[0].st);
+        const sameKey = r => r.people.every(p => stKey(p.st) === key(r));
+        while (rows.length > WORKER_ROWS) {
+            let pair = null;
+            for (let i = 0; i < rows.length && !pair; i++) for (let j = i + 1; j < rows.length && !pair; j++)
+                if (sameKey(rows[i]) && sameKey(rows[j]) && key(rows[i]) === key(rows[j]) && key(rows[i]) !== '') pair = [i, j];
+            for (let i = 0; i < rows.length && !pair; i++) for (let j = i + 1; j < rows.length && !pair; j++)
+                if (sameKey(rows[i]) && sameKey(rows[j]) && key(rows[i]) === key(rows[j])) pair = [i, j];
+            if (!pair) pair = [rows.length - 2, rows.length - 1];
+            const merged = { order: Math.min(rows[pair[0]].order, rows[pair[1]].order), people: rows[pair[0]].people.concat(rows[pair[1]].people) };
+            rows = rows.filter((_, idx) => idx !== pair[0] && idx !== pair[1]);
+            rows.push(merged);
+        }
+        rows.sort((a, b) => a.order - b.order);
+        return rows.map(r => {
+            if (sameKey(r)) {
+                const st = r.people[0].st;
+                return { name: r.people.map(p => p.name).join(', '), humu: st && st.col === 'humu' ? st.val : '', gita: st && st.col === 'gita' ? st.val : '' };
+            }
+            return { name: r.people.map(p => p.name + (p.st ? '(' + p.st.val + ')' : '')).join(', '), humu: '', gita: '' };
+        });
+    }
+
+    async function fetchLeaveEmployees() {
+        const snap = await firebase.firestore().collection('annual_system').doc('dataStore').get();
+        const d = snap.exists ? snap.data() : null;
+        return Array.isArray(d && d.employees) ? d.employees : null;
+    }
+
+    function workerRowEls() { return document.querySelectorAll('.worker-row'); }
+    function workersHaveData() {
+        let has = false;
+        workerRowEls().forEach(r => {
+            ['.w-name', '.w-jugan', '.w-yagan', '.w-humu', '.w-gita'].forEach(c => { if (r.querySelector(c).value !== '') has = true; });
+        });
+        return has;
+    }
+    function fitNameFont(input) { input.style.fontSize = input.value.length > 6 ? '11px' : ''; }
+
+    function fillWorkersIfEmpty() {
+        const date = document.getElementById('work-date').value;
+        const btn = document.getElementById('btn-leave-fill');
+        const past = isPastDate(date);
+        if (btn) { btn.disabled = past; btn.style.opacity = past ? '0.4' : '1'; btn.style.cursor = past ? 'not-allowed' : 'pointer'; btn.title = past ? '과거 날짜는 연차 데이터로 채울 수 없습니다' : ''; }
+        
+        // 이미 근무자 데이터(이름 등)가 입력되어 있으면 연차 데이터로 강제 초기화하지 않고 동기화만 검사
+        if (workersHaveData()) { 
+            if (!past) syncSavedWorkers(date); 
+            return; 
+        }
+        if (past) { setLinkStatus('과거 날짜는 연차 데이터로 채우지 않습니다. 직접 입력해 주세요.', '#64748b'); return; }
+        autoFillWorkers(false);
+    }
+
+    const HUMU_FROM_LEAVE = ['휴무', '대체', '대체반차', '연차', '반차', '조휴', '축휴'];
+    const GITA_FROM_LEAVE = ['교육', '교육반차'];
+    async function syncSavedWorkers(date) {
+        let emps;
+        try { emps = await fetchLeaveEmployees(); } catch (e) { console.error('연차 데이터 비교 실패:', e); return; }
+        if (document.getElementById('work-date').value !== date || !emps) return;
+        const byName = {};
+        emps.filter(e => e.dept === LEAVE_DEPT && !(e.joinDate && e.joinDate > date) && !(e.retireDate && e.retireDate < date))
+            .forEach(e => { byName[e.name] = statusOf(e, date); });
+        
+        let changedCount = 0;
+        workerRowEls().forEach(row => {
+            const raw = row.querySelector('.w-name').value;
+            const names = raw.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+            if (!names.length) return;
+            
+            const humu = row.querySelector('.w-humu'), gita = row.querySelector('.w-gita');
+            // 사용자가 이미 수동으로 선택한 값이 있다면 연차 데이터가 없거나 다르더라도 절대 지우지 않고 유지함
+            if (humu.value !== "" || gita.value !== "") return;
+
+            // 단 한 명이라도 연차 시스템에 해당 날짜 휴가 데이터가 있는 경우에만 자동 채움 반영
+            if (names.some(n => n in byName && byName[n])) {
+                const sts = names.map(n => byName[n]).filter(Boolean);
+                if (sts.length > 0) {
+                    const want = sts[0];
+                    if (want.col === 'humu' && humu.value === "") { humu.value = want.val; changedCount++; }
+                    else if (want.col === 'gita' && gita.value === "") { gita.value = want.val; changedCount++; }
+                }
+            }
+        });
+
+        setLinkStatus(changedCount > 0 
+            ? '✅ 연차 시스템 기준으로 ' + changedCount + '건 자동 반영됨' 
+            : '✅ 연차 데이터와 동기화 완료', '#059669');
+    }
+
+    async function autoFillWorkers(force) {
+        const date = document.getElementById('work-date').value;
+        if (!date) { if (force) alert('일자를 먼저 선택하세요.'); return; }
+        if (isPastDate(date)) { if (force) alert('과거 날짜는 연차 데이터로 채울 수 없습니다. 직접 입력해 주세요.'); return; }
+        if (force && workersHaveData() && !confirm('근무자 표를 연차 데이터로 다시 채웁니다.\n입력해 둔 성명과 주간/야간/휴무/기타 선택은 모두 바뀝니다. 계속할까요?')) return;
+        setLinkStatus('연차 데이터 불러오는 중...', '#64748b');
+        let emps;
+        try { emps = await fetchLeaveEmployees(); }
+        catch (e) {
+            console.error('연차 데이터 연동 실패:', e);
+            if (document.getElementById('work-date').value === date) setLinkStatus('⚠️ 연차 데이터 연동 실패 (직접 입력해 주세요)', '#dc2626');
+            return;
+        }
+        if (document.getElementById('work-date').value !== date) return;
+        if (!emps) { setLinkStatus('⚠️ 연차 데이터가 없습니다.', '#dc2626'); return; }
+
+        const members = emps.filter(e => e.dept === LEAVE_DEPT
+                && !(e.joinDate && e.joinDate > date)
+                && !(e.retireDate && e.retireDate < date))
+            .sort(compareByRank)
+            .map(e => ({ name: e.name, st: statusOf(e, date) }));
+
+        const rows = buildWorkerRows(members);
+        workerRowEls().forEach((row, i) => {
+            const r = rows[i] || { name: '', humu: '', gita: '' };
+            const nameEl = row.querySelector('.w-name');
+            nameEl.value = r.name; fitNameFont(nameEl);
+            row.querySelector('.w-jugan').value = '';
+            row.querySelector('.w-yagan').value = '';
+            row.querySelector('.w-humu').value = r.humu;
+            row.querySelector('.w-gita').value = r.gita;
+        });
+        const onLeave = members.filter(m => m.st).length;
+        setLinkStatus('✅ 연차 데이터 반영됨 (재직 ' + members.length + '명, 휴가·교육 ' + onLeave + '명)' + (members.length > WORKER_ROWS ? ' · 같은 상태끼리 한 칸에 표시' : ''), '#059669');
     }
 
     window.onload = function() {
